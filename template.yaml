@@ -1,0 +1,189 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Seattle-area outbreak monitor - polls CDC / local health departments / news, emails new outbreaks, serves a dashboard.
+
+Parameters:
+  NotificationEmail:
+    Type: String
+    Description: Email address that receives outbreak alerts (you must confirm the SNS subscription email).
+  ScheduleExpression:
+    Type: String
+    Default: cron(0 6-22/2 * * ? *)
+    Description: When to check (America/Los_Angeles time). Default is every 2 hours, 6am-10pm.
+  MaxAgeDays:
+    Type: Number
+    Default: 7
+    Description: Ignore items published more than this many days ago.
+  DomainName:
+    Type: String
+    Default: ""
+    Description: Optional custom hostname for the dashboard, e.g. outbreak.example.com
+  CertificateArn:
+    Type: String
+    Default: ""
+    Description: ACM certificate (us-east-1) covering DomainName. Required if DomainName is set.
+
+Conditions:
+  HasDomain: !Not [!Equals [!Ref DomainName, ""]]
+
+Resources:
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: Seattle Outbreak Alerts
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref NotificationEmail
+
+  SeenTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
+  # ---------------- Dashboard (private S3 bucket behind CloudFront) ----------------
+  DashboardBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  DashboardOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${AWS::StackName}-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  DashboardDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: Seattle Outbreak Watch dashboard
+        DefaultRootObject: index.html
+        HttpVersion: http2and3
+        PriceClass: PriceClass_100
+        Aliases: !If [HasDomain, [!Ref DomainName], !Ref AWS::NoValue]
+        ViewerCertificate: !If
+          - HasDomain
+          - AcmCertificateArn: !Ref CertificateArn
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: TLSv1.2_2021
+          - CloudFrontDefaultCertificate: true
+        Origins:
+          - Id: s3
+            DomainName: !GetAtt DashboardBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt DashboardOAC.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        DefaultCacheBehavior:
+          TargetOriginId: s3
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+          # Managed "CachingOptimized" policy; data.json is fetched with a cache-busting query string
+          # that this policy ignores, so it also sets a short max-age on data.json at upload time.
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+
+  DashboardBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DashboardBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${DashboardBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${DashboardDistribution}
+
+  # ---------------- Monitor ----------------
+  MonitorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: app.handler
+      Runtime: python3.13
+      Architectures: [arm64]
+      MemorySize: 256
+      Timeout: 120
+      Environment:
+        Variables:
+          SEEN_TABLE: !Ref SeenTable
+          TOPIC_ARN: !Ref AlertTopic
+          MAX_AGE_DAYS: !Ref MaxAgeDays
+          DASHBOARD_BUCKET: !Ref DashboardBucket
+          DASHBOARD_URL: !If
+            - HasDomain
+            - !Sub https://${DomainName}/
+            - !Sub https://${DashboardDistribution.DomainName}/
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SeenTable
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt AlertTopic.TopicName
+        - S3CrudPolicy:
+            BucketName: !Ref DashboardBucket
+      Events:
+        Schedule:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: !Ref ScheduleExpression
+            ScheduleExpressionTimezone: America/Los_Angeles
+
+  MonitorLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${MonitorFunction}
+      RetentionInDays: 30
+
+  # Email you if the function itself starts failing.
+  ErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Outbreak monitor Lambda is erroring
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref MonitorFunction
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+Outputs:
+  FunctionName:
+    Value: !Ref MonitorFunction
+  TopicArn:
+    Value: !Ref AlertTopic
+  DashboardBucket:
+    Value: !Ref DashboardBucket
+  DashboardUrl:
+    Value: !If [HasDomain, !Sub "https://${DomainName}/", !Sub "https://${DashboardDistribution.DomainName}/"]
+  CloudFrontDomain:
+    Description: Point a CNAME for your custom domain at this.
+    Value: !GetAtt DashboardDistribution.DomainName

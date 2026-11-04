@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Seattle Outbreak Watch</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --ink: #1d2433; --muted: #5f6b7a; --line: #e3e7ec;
+    --urgent: #b42318; --urgent-bg: #fef3f2; --warn: #b54708; --warn-bg: #fffaeb;
+    --ok: #067647; --ok-bg: #ecfdf3; --accent: #1f5fbf;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1218; --card: #171b23; --ink: #e6e9ef; --muted: #9aa4b2; --line: #2a303b;
+      --urgent: #f97066; --urgent-bg: #2b1513; --warn: #fdb022; --warn-bg: #2a2010;
+      --ok: #47cd89; --ok-bg: #0f2a1d; --accent: #84adff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         background: var(--bg); color: var(--ink); }
+  main { max-width: 980px; margin: 0 auto; padding: 20px 16px 60px; }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 16px; margin: 0 0 10px; }
+  a { color: var(--accent); }
+  .sub { color: var(--muted); font-size: 13px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px;
+           margin-bottom: 16px; }
+  .banner { border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; border: 1px solid; }
+  .banner.urgent { background: var(--urgent-bg); border-color: var(--urgent); }
+  .banner.ok { background: var(--ok-bg); border-color: var(--ok); }
+  .banner strong { display: block; font-size: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .tile .n { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .tile .l { color: var(--muted); font-size: 12.5px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px;
+          margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
+  tr.active td { background: var(--urgent-bg); }
+  .bar { display: inline-block; height: 8px; background: var(--accent); border-radius: 4px; vertical-align: middle;
+         margin-left: 6px; }
+  .bar.local { background: var(--urgent); }
+  .item { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .item:last-child { border-bottom: 0; }
+  .item a.t { font-weight: 600; text-decoration: none; color: var(--ink); }
+  .item a.t:hover { text-decoration: underline; }
+  .meta { color: var(--muted); font-size: 12.5px; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px;
+         margin-right: 6px; border: 1px solid var(--line); color: var(--muted); }
+  .tag.baby { color: var(--urgent); border-color: var(--urgent); }
+  .tag.new { color: var(--ok); border-color: var(--ok); }
+  .summary { font-size: 13.5px; color: var(--muted); margin-top: 3px; white-space: pre-line; }
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .filters button { font: inherit; font-size: 13px; padding: 4px 12px; border-radius: 999px; cursor: pointer;
+                    border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+  .filters button[aria-pressed="true"] { background: var(--ink); color: var(--card); border-color: var(--ink); }
+  .advice { font-size: 13.5px; background: var(--warn-bg); border-left: 3px solid var(--warn); padding: 10px 12px;
+            border-radius: 6px; margin-top: 12px; }
+  .src { display: flex; flex-wrap: wrap; gap: 6px; }
+  .src span { font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--ok-bg); color: var(--ok); }
+  .src span.bad { background: var(--urgent-bg); color: var(--urgent); }
+  .empty { color: var(--muted); font-style: italic; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Seattle Outbreak Watch</h1>
+      <div class="sub">Outbreaks around Seattle that matter for an infant, from public-health agencies and local news</div>
+    </div>
+    <div class="sub" id="updated">Loading…</div>
+  </header>
+
+  <div id="banner"></div>
+  <div class="grid" id="tiles"></div>
+
+  <section class="card">
+    <h2>King County measles exposure sites</h2>
+    <div id="exposures"></div>
+    <div class="advice">
+      <b>Under 12 months:</b> babies haven't had their routine MMR dose. If your baby was at a listed place and time,
+      call your pediatrician right away. Immune globulin (IG) given within 6 days of exposure can prevent or
+      soften measles. Call ahead; don't walk into a clinic or ER with a possibly exposed baby.
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Outbreaks &amp; alerts <span class="sub" id="count"></span></h2>
+    <div class="filters" id="filters"></div>
+    <div id="items"></div>
+  </section>
+
+  <section class="card">
+    <h2>Washington measles cases by county <span class="sub" id="doh-updated"></span></h2>
+    <div id="counties"></div>
+  </section>
+
+  <section class="card">
+    <h2>Sources (last run)</h2>
+    <div class="src" id="sources"></div>
+  </section>
+</main>
+
+<script>
+const PUGET = new Set(["King", "Snohomish", "Pierce", "Kitsap"]);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmtDate = iso => iso ? new Date(iso).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"}) : "";
+const daysAgo = iso => iso ? (Date.now() - new Date(iso)) / 864e5 : Infinity;
+const parseUS = s => { // "4/24/2026" or "4/3/26"
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(s || ""); if (!m) return null;
+  const y = m[3].length === 2 ? 2000 + +m[3] : +m[3]; return new Date(y, m[1] - 1, m[2], 23, 59);
+};
+let DATA, filter = "baby";
+
+async function load() {
+  const r = await fetch("data.json?t=" + Date.now());
+  DATA = await r.json();
+  render();
+}
+
+function render() {
+  const d = DATA, m = d.measles || {};
+  document.getElementById("updated").textContent =
+    "Last checked " + new Date(d.generated_at).toLocaleString("en-US", {dateStyle: "medium", timeStyle: "short"});
+
+  // Active exposures = "watch for symptoms until" date hasn't passed.
+  const exps = (m.kc_exposures || []).map(e => ({...e, until: parseUS(e.watch_until)}));
+  const active = exps.filter(e => e.until && e.until >= new Date());
+  const recentBaby = (d.items || []).filter(i => i.critical && daysAgo(i.published || i.first_seen) <= 7);
+  const recentMeasles = recentBaby.filter(i => i.measles);
+
+  const b = document.getElementById("banner");
+  if (active.length || recentMeasles.length) {
+    b.innerHTML = `<div class="banner urgent"><strong>⚠ Measles activity near Seattle</strong>
+      ${active.length ? `${active.length} King County exposure site(s) still in the watch window. ` : ""}
+      ${recentMeasles.length ? `${recentMeasles.length} measles-related item(s) in the past week.` : ""}</div>`;
+  } else if (recentBaby.length) {
+    b.innerHTML = `<div class="banner urgent"><strong>${recentBaby.length} baby-relevant alert(s) this week</strong>
+      See the list below.</div>`;
+  } else {
+    b.innerHTML = `<div class="banner ok"><strong>No active measles exposure sites in King County</strong>
+      and no baby-relevant alerts in the past 7 days.</div>`;
+  }
+
+  const county = n => (m.wa_by_county || []).find(c => c.county === n)?.cases ?? 0;
+  const tiles = [
+    [active.length, "Active KC exposure sites"],
+    [m.kc_cases_this_year ?? "–", `King County measles cases ${m.kc_year || ""}`],
+    [county("Snohomish") + county("Pierce") + county("Kitsap"), "Measles in Snohomish/Pierce/Kitsap"],
+    [m.wa_total ?? "–", `WA measles cases ${m.wa_year || ""}`],
+    [recentBaby.length, "Baby-relevant alerts (7 days)"],
+    [(d.items || []).filter(i => daysAgo(i.published || i.first_seen) <= 7).length, "All alerts (7 days)"],
+  ];
+  document.getElementById("tiles").innerHTML = tiles.map(([n, l]) =>
+    `<div class="tile"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`).join("");
+
+  document.getElementById("exposures").innerHTML = exps.length ? `
+    <table><thead><tr><th>Date</th><th>Time</th><th>Location</th><th>Watch until</th></tr></thead><tbody>
+    ${exps.map(e => `<tr class="${e.until && e.until >= new Date() ? "active" : ""}">
+      <td>${esc(e.date)}</td><td>${esc(e.time)}</td><td>${esc(e.location)}</td><td>${esc(e.watch_until)}</td></tr>`).join("")}
+    </tbody></table>
+    <div class="sub" style="margin-top:6px">Highlighted rows are still in their watch window.
+      Source: <a href="${esc(m.kc_url)}" target="_blank" rel="noopener">Public Health – Seattle &amp; King County</a>
+      ${m.kc_updated ? "(updated " + esc(m.kc_updated) + ")" : ""}</div>`
+    : `<div class="empty">No exposure sites listed.</div>`;
+
+  const counties = m.wa_by_county || [];
+  const max = Math.max(1, ...counties.map(c => c.cases));
+  document.getElementById("doh-updated").textContent = m.doh_updated ? "· updated " + m.doh_updated : "";
+  document.getElementById("counties").innerHTML = counties.length ? `
+    <table><thead><tr><th>County</th><th>Cases</th></tr></thead><tbody>
+    ${counties.map(c => `<tr><td>${esc(c.county)}${PUGET.has(c.county) ? " <span class='tag baby'>Puget Sound</span>" : ""}</td>
+      <td>${c.cases}<span class="bar ${PUGET.has(c.county) ? "local" : ""}" style="width:${Math.round(c.cases / max * 160)}px"></span></td></tr>`).join("")}
+    </tbody></table>
+    <div class="sub" style="margin-top:6px">Total ${esc(m.wa_total)} · hospitalized ${esc(m.wa_hospitalized ?? "–")}
+      · under 5 years old ${esc(m.wa_under5 ?? "–")} ·
+      <a href="${esc(m.doh_url)}" target="_blank" rel="noopener">WA DOH measles page</a> (includes statewide exposure map)</div>`
+    : `<div class="empty">County data unavailable.</div>`;
+
+  renderItems();
+
+  document.getElementById("sources").innerHTML = (d.sources || []).map(s =>
+    `<span class="${s.ok ? "" : "bad"}" title="${esc(s.error || "")}">${s.ok ? "✓" : "✗"} ${esc(s.name.replace(/_/g, " "))}</span>`).join("");
+}
+
+function renderItems() {
+  const filters = [["baby", "Baby-relevant"], ["measles", "Measles"], ["all", "Everything"]];
+  document.getElementById("filters").innerHTML = filters.map(([k, l]) =>
+    `<button aria-pressed="${filter === k}" data-f="${k}">${l}</button>`).join("");
+  document.querySelectorAll("#filters button").forEach(b => b.onclick = () => { filter = b.dataset.f; renderItems(); });
+
+  const items = (DATA.items || []).filter(i =>
+    filter === "all" ? true : filter === "measles" ? i.measles : i.critical);
+  document.getElementById("count").textContent = `· ${items.length} in the last 90 days`;
+  document.getElementById("items").innerHTML = items.length ? items.map(i => {
+    const when = i.published || i.first_seen;
+    return `<div class="item">
+      ${i.critical ? '<span class="tag baby">Baby-relevant</span>' : ""}
+      ${daysAgo(i.first_seen) <= 1 ? '<span class="tag new">New</span>' : ""}
+      <a class="t" href="${esc(i.link)}" target="_blank" rel="noopener">${esc(i.title)}</a>
+      <div class="meta">${esc(i.source)} · ${fmtDate(when)}</div>
+      ${i.summary && !i.title.toLowerCase().includes(i.summary.toLowerCase()) ? `<div class="summary">${esc(i.summary)}</div>` : ""}
+    </div>`;
+  }).join("") : `<div class="empty">Nothing here yet.</div>`;
+}
+
+load().catch(e => { document.getElementById("updated").textContent = "Couldn't load data: " + e.message; });
+setInterval(load, 10 * 60 * 1000);
+</script>
+</body>
+</html>
