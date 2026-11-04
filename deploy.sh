@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build + deploy the stack, upload the dashboard page, and run the monitor once.
+# Deploy the CDK stack (Lambda, schedule, table, alerts, dashboard) and run the monitor once.
 #
 # Settings come from environment variables or a local, git-ignored .env file
 # (copy .env.example to .env):
@@ -13,26 +13,17 @@ cd "$(dirname "$0")"
 if [[ -f .env ]]; then
   set -a; source .env; set +a
 fi
-
 export AWS_REGION="${AWS_REGION:-us-west-2}"
 [[ -n "${AWS_PROFILE:-}" ]] && export AWS_PROFILE
+export JSII_SILENCE_WARNING_UNTESTED_NODE_VERSION=1
 STACK="${STACK:-seattle-outbreak-monitor}"
-EMAIL="${EMAIL:?Set EMAIL (alert recipient) in .env or the environment}"
 
-PARAMS=("NotificationEmail=$EMAIL")
-if [[ -n "${DOMAIN:-}" ]]; then
-  PARAMS+=("DomainName=$DOMAIN" "CertificateArn=${CERT_ARN:?CERT_ARN required with DOMAIN}")
-fi
-
-sam build
-sam deploy --stack-name "$STACK" --region "$AWS_REGION" --resolve-s3 --capabilities CAPABILITY_IAM \
-  --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides "${PARAMS[@]}"
+cd infrastructure
+[[ -d node_modules ]] || npm ci
+npx cdk deploy --require-approval never --no-notices
 
 out() { aws cloudformation describe-stacks --stack-name "$STACK" --region "$AWS_REGION" \
   --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text; }
-
-aws s3 cp web/index.html "s3://$(out DashboardBucket)/index.html" \
-  --content-type "text/html; charset=utf-8" --cache-control "max-age=300"
 
 echo "Running monitor once..."
 aws lambda invoke --function-name "$(out FunctionName)" --region "$AWS_REGION" /dev/stdout

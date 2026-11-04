@@ -21,7 +21,11 @@ EventBridge Scheduler (every 2h, 6am–10pm Pacific) → Lambda (`src/app.py`, s
 - SNS: email alerts (subject says `MEASLES` when relevant)
 - S3 + CloudFront: dashboard (`web/index.html` reads `data.json`, which the Lambda writes)
 
+Infrastructure is AWS CDK (TypeScript) in `infrastructure/`. The stack is in `lib/outbreak-monitor-stack.ts`.
+
 ## Deploy
+
+Needs Node.js and an AWS account [bootstrapped for CDK](https://docs.aws.amazon.com/cdk/v2/guide/bootstrapping.html).
 
 ```bash
 cp .env.example .env    # set EMAIL (and optionally AWS_PROFILE, DOMAIN, CERT_ARN)
@@ -30,7 +34,7 @@ cp .env.example .env    # set EMAIL (and optionally AWS_PROFILE, DOMAIN, CERT_AR
 
 `.env` is git-ignored, so your email, domain and account details stay out of the repo.
 
-`deploy.sh` builds and deploys the SAM stack, uploads the dashboard and runs the monitor once. New email subscribers must click the SNS confirmation link.
+`deploy.sh` runs `cdk deploy` (which also uploads the dashboard page) and then runs the monitor once. To preview changes, run `cd infrastructure && npx cdk diff`. New email subscribers must click the SNS confirmation link.
 
 ## Local dry run
 
