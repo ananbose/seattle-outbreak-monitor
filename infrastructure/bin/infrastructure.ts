@@ -13,9 +13,10 @@ if (fs.existsSync(envFile)) {
   }
 }
 
-const notificationEmail = process.env.EMAIL;
-if (!notificationEmail) {
-  throw new Error('Set EMAIL (alert recipient) in .env or the environment. See .env.example.');
+// EMAIL may list several recipients, comma-separated.
+const notificationEmails = (process.env.EMAIL || '').split(',').map(e => e.trim()).filter(Boolean);
+if (notificationEmails.length === 0) {
+  throw new Error('Set EMAIL (alert recipients, comma-separated) in .env or the environment. See .env.example.');
 }
 if (process.env.DOMAIN && !process.env.CERT_ARN) {
   throw new Error('CERT_ARN (ACM certificate in us-east-1) is required when DOMAIN is set.');
@@ -28,7 +29,7 @@ new OutbreakMonitorStack(app, 'OutbreakMonitor', {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.AWS_REGION || process.env.CDK_DEFAULT_REGION || 'us-west-2',
   },
-  notificationEmail,
+  notificationEmails,
   domainName: process.env.DOMAIN || undefined,
   certificateArn: process.env.CERT_ARN || undefined,
   scheduleExpression: process.env.SCHEDULE || 'cron(0 6-22/2 * * ? *)',

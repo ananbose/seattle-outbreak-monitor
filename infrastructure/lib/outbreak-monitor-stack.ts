@@ -14,8 +14,8 @@ import * as scheduler from 'aws-cdk-lib/aws-scheduler';
 import * as sns from 'aws-cdk-lib/aws-sns';
 
 export interface OutbreakMonitorStackProps extends cdk.StackProps {
-  /** Address that receives alert emails (must confirm the SNS subscription). */
-  notificationEmail: string;
+  /** Addresses that receive alert emails (each must confirm its SNS subscription). */
+  notificationEmails: string[];
   /** Optional custom dashboard hostname, e.g. outbreak.example.com. */
   domainName?: string;
   /** ACM certificate in us-east-1 covering domainName. */
@@ -45,7 +45,7 @@ export class OutbreakMonitorStack extends cdk.Stack {
     // already-confirmed subscription is kept).
     const topic = new sns.CfnTopic(this, 'AlertTopic', {
       displayName: 'Seattle Outbreak Alerts',
-      subscription: [{ protocol: 'email', endpoint: props.notificationEmail }],
+      subscription: props.notificationEmails.map(endpoint => ({ protocol: 'email', endpoint })),
     });
     pin(topic, 'AlertTopic');
 

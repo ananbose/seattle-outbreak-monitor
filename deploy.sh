@@ -3,7 +3,7 @@
 #
 # Settings come from environment variables or a local, git-ignored .env file
 # (copy .env.example to .env):
-#   EMAIL       (required) address that receives alerts
+#   EMAIL       (required) alert recipient(s), comma-separated
 #   DOMAIN      (optional) custom dashboard hostname, e.g. outbreak.example.com
 #   CERT_ARN    (required with DOMAIN) ACM certificate in us-east-1 for DOMAIN
 #   AWS_PROFILE / AWS_REGION (optional)
