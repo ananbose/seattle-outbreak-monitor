@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import { Construct } from 'constructs';
 import * as cdk from 'aws-cdk-lib';
@@ -136,12 +137,26 @@ export class OutbreakMonitorStack extends cdk.Stack {
 
     // Upload the static page. prune=false so data.json / history.json written by
     // the Lambda are never deleted.
+    const webDir = path.join(__dirname, '..', '..', 'web');
     new s3deploy.BucketDeployment(this, 'DashboardPage', {
-      sources: [s3deploy.Source.asset(path.join(__dirname, '..', '..', 'web'))],
+      sources: [
+        s3deploy.Source.asset(webDir, { exclude: ['index.html'] }),
+        // index.html gets the real site URL (for link-preview tags) filled in at deploy time,
+        // so the domain never has to be committed.
+        s3deploy.Source.data(
+          'index.html',
+          fs.readFileSync(path.join(webDir, 'index.html'), 'utf8').split('__SITE_URL__').join(dashboardUrl),
+        ),
+      ],
       destinationBucket: bucket,
       prune: false,
       cacheControl: [s3deploy.CacheControl.fromString('max-age=300')],
-      contentType: 'text/html; charset=utf-8',
+      // Invalidate the CDN copy of the page + preview image on every deploy.
+      distribution: cloudfront.Distribution.fromDistributionAttributes(this, 'DashboardDistributionRef', {
+        distributionId: distribution.ref,
+        domainName: distribution.attrDomainName,
+      }),
+      distributionPaths: ['/index.html', '/', '/og-image.png'],
     });
 
     // ---------------- Monitor Lambda ----------------

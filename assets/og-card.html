@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<!-- Source for web/og-image.png (link preview card). Regenerate with:
+     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu \
+       --hide-scrollbars --force-device-scale-factor=1 --window-size=1200,900 \
+       --screenshot=og-full.png assets/og-card.html
+     then crop the top 1200x630 (headless viewport is shorter than the window) to web/og-image.png -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    font-family: -apple-system, "SF Pro Display", "Helvetica Neue", sans-serif;
+    background: #fbf8f4;
+    color: #1d2433;
+    position: relative;
+  }
+  .accent { position: absolute; left: 0; top: 0; bottom: 0; width: 18px; background: #b42318; }
+  .wrap { position: absolute; left: 96px; right: 96px; top: 84px; bottom: 72px; display: flex; flex-direction: column; }
+  .kicker {
+    font-size: 26px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #b42318;
+  }
+  h1 { font-size: 92px; line-height: 1.02; font-weight: 750; margin: 18px 0 0; letter-spacing: -0.02em; }
+  .sub { font-size: 34px; line-height: 1.35; color: #4a5565; margin-top: 26px; max-width: 900px; }
+  .chips { display: flex; gap: 14px; margin-top: auto; flex-wrap: wrap; }
+  .chip {
+    font-size: 25px; font-weight: 600; padding: 10px 22px; border-radius: 999px;
+    background: #fff; border: 2px solid #e6dfd6; color: #1d2433;
+  }
+  .chip.hot { border-color: #b42318; color: #b42318; background: #fef3f2; }
+  .foot {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-top: 30px; font-size: 26px; color: #5f6b7a;
+  }
+  .foot b { color: #1d2433; font-weight: 650; }
+</style>
+</head>
+<body>
+  <div class="accent"></div>
+  <div class="wrap">
+    <div class="kicker">For Seattle-area parents</div>
+    <h1>Seattle Outbreak Watch</h1>
+    <div class="sub">Measles exposure sites and outbreaks that matter for babies, from King County, WA DOH, CDC &amp; local news.</div>
+    <div class="chips">
+      <span class="chip hot">Measles exposure sites</span>
+      <span class="chip">Whooping cough &amp; RSV</span>
+      <span class="chip">Formula &amp; baby food recalls</span>
+      <span class="chip">Restaurant outbreaks</span>
+    </div>
+    <div class="foot"><b>Free · no sign-up</b><span>Checked every 2 hours</span></div>
+  </div>
+</body>
+</html>
