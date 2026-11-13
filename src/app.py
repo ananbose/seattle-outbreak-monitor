@@ -651,8 +651,61 @@ def measles_snapshot():
     return out
 
 
+NNDSS_URL = "https://data.cdc.gov/resource/x9gk-5huc.json"
+
+
+def nndss_measles_by_state():
+    """Measles cases by state from CDC's NNDSS weekly tables (data.cdc.gov).
+
+    Each state has two rows (imported + indigenous); m1 = this week,
+    m3 = year to date, m4 = same period last year. Provisional data.
+    www.cdc.gov blocks automated clients, data.cdc.gov does not.
+    """
+    def soql(params):
+        return json.loads(http_get(f"{NNDSS_URL}?{urllib.parse.urlencode(params)}"))
+
+    measles = "label like 'Measles%'"
+    latest = soql({"$select": "year,week", "$where": measles, "$group": "year,week",
+                   "$order": "year DESC, week DESC", "$limit": 1})[0]
+    rows = soql({"$where": f"{measles} AND year='{latest['year']}' AND week='{latest['week']}'",
+                 "$limit": 500})
+
+    def num(v):
+        try:
+            return int(float(v))
+        except (TypeError, ValueError):
+            return 0
+
+    states, us = {}, {"ytd": 0, "week": 0, "prev_ytd": 0}
+    for r in rows:
+        name = r.get("location1")
+        if r.get("states") == "U.S. Residents":
+            target = us
+        elif name:  # states, DC and territories; regions have no location1
+            name = "New York" if name == "New York City" else name  # NNDSS splits NYC out
+            target = states.setdefault(name, {"state": name, "ytd": 0, "week": 0, "prev_ytd": 0})
+        else:
+            continue
+        target["ytd"] += num(r.get("m3"))
+        target["week"] += num(r.get("m1"))
+        target["prev_ytd"] += num(r.get("m4"))
+    return {
+        "year": int(latest["year"]), "week": int(latest["week"]), "us": us,
+        "states": sorted(states.values(), key=lambda x: -x["ytd"]),
+        "source_url": "https://data.cdc.gov/NNDSS/NNDSS-Weekly-Data/x9gk-5huc",
+    }
+
+
 def _iso(dt):
     return dt.astimezone(timezone.utc).isoformat() if dt else None
+
+
+def _best_effort(fn):
+    try:
+        return fn()
+    except Exception:  # noqa: BLE001 - optional dashboard panel
+        log.exception("%s failed", fn.__name__)
+        return None
 
 
 def publish_dashboard(s3, bucket, items, status):
@@ -679,6 +732,7 @@ def publish_dashboard(s3, bucket, items, status):
         "generated_at": _iso(now),
         "sources": status,
         "measles": measles_snapshot(),
+        "measles_us": _best_effort(nndss_measles_by_state),
         "items": sorted(history.values(), key=lambda v: v.get("published") or v["first_seen"], reverse=True),
     }
     s3.put_object(Bucket=bucket, Key="data.json", Body=json.dumps(data).encode(),

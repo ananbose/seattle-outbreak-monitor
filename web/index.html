@@ -78,6 +78,34 @@
   .src span { font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--ok-bg); color: var(--ok); }
   .src span.bad { background: var(--urgent-bg); color: var(--urgent); }
   .empty { color: var(--muted); font-style: italic; }
+
+  /* Measles maps: sequential red ramp; m0 = no cases */
+  :root { --m0: #eef0f3; --m1: #fde0dc; --m2: #f9b3aa; --m3: #f0786a; --m4: #d23f31; --m5: #8f1d14;
+          --map-stroke: #ffffff; --map-hi: #1d2433; }
+  @media (prefers-color-scheme: dark) {
+    :root { --m0: #232833; --m1: #4a2420; --m2: #6e2c25; --m3: #a33a2e; --m4: #d9584a; --m5: #ff8b7d;
+            --map-stroke: #0f1218; --map-hi: #e6e9ef; }
+  }
+  .maps { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .maps { grid-template-columns: 1fr; } }
+  .map-wrap { position: relative; }
+  .map-wrap svg { width: 100%; height: auto; display: block; }
+  .map-wrap path.region { stroke: var(--map-stroke); stroke-width: 0.6; cursor: pointer; vector-effect: non-scaling-stroke; }
+  .map-wrap path.region:hover, .map-wrap path.region.sel { stroke: var(--map-hi); stroke-width: 1.6; }
+  .map-wrap path.puget { stroke: var(--map-hi); stroke-width: 1.4; }
+  .map-wrap .city { fill: var(--map-hi); }
+  .map-wrap .city-label { fill: var(--map-hi); font-weight: 600; paint-order: stroke;
+                          stroke: var(--card); stroke-width: 3px; vector-effect: non-scaling-stroke; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; }
+  .tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--card); font-size: 12.5px;
+         padding: 5px 9px; border-radius: 6px; white-space: nowrap; transform: translate(-50%, -120%);
+         opacity: 0; transition: opacity .1s; z-index: 2; }
+  .tip.on { opacity: 1; }
+  .mini { width: 100%; font-size: 13px; margin-top: 8px; }
+  .mini td, .mini th { padding: 4px 6px; }
+  .mini td.num, .mini th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  h3 { font-size: 14px; margin: 0 0 6px; }
 </style>
 </head>
 <body>
@@ -104,14 +132,27 @@
   </section>
 
   <section class="card">
-    <h2>Outbreaks &amp; alerts <span class="sub" id="count"></span></h2>
-    <div class="filters" id="filters"></div>
-    <div id="items"></div>
+    <h2>Measles cases this year</h2>
+    <div class="maps">
+      <div>
+        <h3>Washington, by county <span class="sub" id="doh-updated"></span></h3>
+        <div class="map-wrap" id="wa-map"><div class="empty">Loading map…</div></div>
+        <div class="legend" id="wa-legend"></div>
+        <div id="counties"></div>
+      </div>
+      <div>
+        <h3>United States, by state <span class="sub" id="us-updated"></span></h3>
+        <div class="map-wrap" id="us-map"><div class="empty">Loading map…</div></div>
+        <div class="legend" id="us-legend"></div>
+        <div id="states"></div>
+      </div>
+    </div>
   </section>
 
   <section class="card">
-    <h2>Washington measles cases by county <span class="sub" id="doh-updated"></span></h2>
-    <div id="counties"></div>
+    <h2>Outbreaks &amp; alerts <span class="sub" id="count"></span></h2>
+    <div class="filters" id="filters"></div>
+    <div id="items"></div>
   </section>
 
   <section class="card">
@@ -120,6 +161,8 @@
   </section>
 </main>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
 <script>
 const PUGET = new Set(["King", "Snohomish", "Pierce", "Kitsap"]);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -167,6 +210,7 @@ function render() {
     [m.kc_cases_this_year ?? "–", `King County measles cases ${m.kc_year || ""}`],
     [county("Snohomish") + county("Pierce") + county("Kitsap"), "Measles in Snohomish/Pierce/Kitsap"],
     [m.wa_total ?? "–", `WA measles cases ${m.wa_year || ""}`],
+    [d.measles_us ? d.measles_us.us.ytd.toLocaleString() : "–", `US measles cases ${d.measles_us?.year || ""}`],
     [recentBaby.length, "Baby-relevant alerts (7 days)"],
     [(d.items || []).filter(i => daysAgo(i.published || i.first_seen) <= 7).length, "All alerts (7 days)"],
   ];
@@ -183,23 +227,156 @@ function render() {
       ${m.kc_updated ? "(updated " + esc(m.kc_updated) + ")" : ""}</div>`
     : `<div class="empty">No exposure sites listed.</div>`;
 
+  // --- Washington by county (WA DOH) ---
   const counties = m.wa_by_county || [];
-  const max = Math.max(1, ...counties.map(c => c.cases));
-  document.getElementById("doh-updated").textContent = m.doh_updated ? "· updated " + m.doh_updated : "";
+  const cmax = Math.max(1, ...counties.map(c => c.cases));
+  document.getElementById("doh-updated").textContent = m.doh_updated ? "· WA DOH, " + m.doh_updated : "";
   document.getElementById("counties").innerHTML = counties.length ? `
-    <table><thead><tr><th>County</th><th>Cases</th></tr></thead><tbody>
+    <table class="mini"><thead><tr><th>County</th><th class="num">Cases</th></tr></thead><tbody>
     ${counties.map(c => `<tr><td>${esc(c.county)}${PUGET.has(c.county) ? " <span class='tag baby'>Puget Sound</span>" : ""}</td>
-      <td>${c.cases}<span class="bar ${PUGET.has(c.county) ? "local" : ""}" style="width:${Math.round(c.cases / max * 160)}px"></span></td></tr>`).join("")}
+      <td class="num">${c.cases}<span class="bar ${PUGET.has(c.county) ? "local" : ""}" style="width:${Math.round(c.cases / cmax * 110)}px"></span></td></tr>`).join("")}
     </tbody></table>
     <div class="sub" style="margin-top:6px">Total ${esc(m.wa_total)} · hospitalized ${esc(m.wa_hospitalized ?? "–")}
-      · under 5 years old ${esc(m.wa_under5 ?? "–")} ·
-      <a href="${esc(m.doh_url)}" target="_blank" rel="noopener">WA DOH measles page</a> (includes statewide exposure map)</div>`
+      · under 5 years old ${esc(m.wa_under5 ?? "–")} · counties not listed have 0 ·
+      <a href="${esc(m.doh_url)}" target="_blank" rel="noopener">WA DOH measles page</a> (has a statewide exposure map)</div>`
     : `<div class="empty">County data unavailable.</div>`;
+
+  // --- United States by state (CDC NNDSS, provisional) ---
+  const us = d.measles_us;
+  const withCases = us ? us.states.filter(s => s.ytd > 0) : [];
+  const waRank = withCases.findIndex(s => s.state === "Washington") + 1;
+  document.getElementById("us-updated").textContent = us ? `· CDC, through week ${us.week} of ${us.year}` : "";
+  document.getElementById("states").innerHTML = us ? `
+    <table class="mini"><thead><tr><th>State</th><th class="num">${us.year}</th><th class="num">This week</th></tr></thead><tbody>
+    ${withCases.slice(0, 10).map(s => `<tr><td>${esc(s.state)}${s.state === "Washington" ? " <span class='tag baby'>WA</span>" : ""}</td>
+      <td class="num">${s.ytd.toLocaleString()}</td><td class="num">${s.week ? "+" + s.week : "–"}</td></tr>`).join("")}
+    ${waRank > 10 ? `<tr><td>… Washington (#${waRank}) <span class='tag baby'>WA</span></td>
+      <td class="num">${withCases[waRank - 1].ytd}</td><td class="num">${withCases[waRank - 1].week ? "+" + withCases[waRank - 1].week : "–"}</td></tr>` : ""}
+    </tbody></table>
+    <div class="sub" style="margin-top:6px">${us.us.ytd.toLocaleString()} US cases in ${us.year} (${us.us.prev_ytd.toLocaleString()} at this point last year)
+      across ${withCases.length} states/jurisdictions · provisional ·
+      <a href="${esc(us.source_url)}" target="_blank" rel="noopener">CDC NNDSS data</a></div>`
+    : `<div class="empty">National data unavailable this run.</div>`;
+
+  drawMaps(counties, us).catch(e => {
+    for (const id of ["wa-map", "us-map"]) document.getElementById(id).innerHTML = `<div class="empty">Map unavailable (${esc(e.message)}).</div>`;
+  });
 
   renderItems();
 
   document.getElementById("sources").innerHTML = (d.sources || []).map(s =>
     `<span class="${s.ok ? "" : "bad"}" title="${esc(s.error || "")}">${s.ok ? "✓" : "✗"} ${esc(s.name.replace(/_/g, " "))}</span>`).join("");
+}
+
+// ---------------- Maps ----------------
+// us-atlas "albers" files are pre-projected (AlbersUSA, scale 1300, 975x610), so paths need no projection.
+const ATLAS_URL = "https://cdn.jsdelivr.net/npm/us-atlas@3.0.1/counties-albers-10m.json";
+let atlasPromise;
+const loadAtlas = () => (atlasPromise ??= d3.json(ATLAS_URL));
+const ALBERS = () => d3.geoAlbersUsa().scale(1300).translate([487.5, 305]);
+
+function ramp(thresholds) {
+  // bucket 0 = no cases; buckets 1..5 = increasing thresholds
+  const scale = d3.scaleThreshold().domain(thresholds).range([1, 2, 3, 4, 5]);
+  return v => (v > 0 ? scale(v) : 0);
+}
+function legend(el, thresholds, unit) {
+  const labels = ["0"];
+  const edges = [1, ...thresholds];
+  for (let i = 0; i < edges.length; i++) {
+    labels.push(i < edges.length - 1 ? `${edges[i]}–${edges[i + 1] - 1}` : `${edges[i]}+`);
+  }
+  el.innerHTML = labels.map((l, i) => `<span><i style="background:var(--m${i})"></i>${l}</span>`).join("") +
+    `<span>${unit}</span>`;
+}
+function tooltip(wrap) {
+  const tip = document.createElement("div");
+  tip.className = "tip";
+  wrap.appendChild(tip);
+  return {
+    show(evt, html) {
+      const r = wrap.getBoundingClientRect();
+      tip.innerHTML = html;
+      tip.style.left = (evt.clientX - r.left) + "px";
+      tip.style.top = (evt.clientY - r.top) + "px";
+      tip.classList.add("on");
+    },
+    hide() { tip.classList.remove("on"); },
+  };
+}
+function bindRegions(sel, tip, label) {
+  sel.on("pointermove", (e, f) => tip.show(e, label(f)))
+     .on("pointerleave", () => tip.hide())
+     .on("click", function (e, f) {           // tap on mobile
+       d3.select(this.parentNode).selectAll(".sel").classed("sel", false);
+       d3.select(this).classed("sel", true);
+       tip.show(e, label(f));
+     });
+}
+
+async function drawMaps(counties, us) {
+  const topo = await loadAtlas();
+  const path = d3.geoPath();
+
+  // Washington counties
+  {
+    const wrap = document.getElementById("wa-map");
+    const byName = new Map(counties.map(c => [c.county, c.cases]));
+    const feats = topojson.feature(topo, topo.objects.counties).features.filter(f => String(f.id).startsWith("53"));
+    const fc = {type: "FeatureCollection", features: feats};
+    const [[x0, y0], [x1, y1]] = path.bounds(fc);
+    const pad = 4;
+    const thresholds = [3, 7, 15, 30];
+    const bucket = ramp(thresholds);
+    wrap.innerHTML = "";
+    const svg = d3.select(wrap).append("svg")
+      .attr("viewBox", [x0 - pad, y0 - pad, x1 - x0 + 2 * pad, y1 - y0 + 2 * pad].join(" "))
+      .attr("role", "img").attr("aria-label", "Map of Washington measles cases by county");
+    const tip = tooltip(wrap);
+    const regions = svg.append("g").selectAll("path").data(feats).join("path")
+      .attr("class", f => "region" + (PUGET.has(f.properties.name) ? " puget" : ""))
+      .attr("d", path)
+      .attr("fill", f => `var(--m${bucket(byName.get(f.properties.name) || 0)})`);
+    // Puget Sound counties drawn last so their outline sits on top
+    regions.filter(f => PUGET.has(f.properties.name)).raise();
+    bindRegions(regions, tip, f => {
+      const n = byName.get(f.properties.name) || 0;
+      return `<b>${esc(f.properties.name)} County</b>: ${n} case${n === 1 ? "" : "s"}`;
+    });
+    // The WA view is zoomed in, so size the marker/label relative to the view width.
+    const u = (x1 - x0) / 100;
+    const [sx, sy] = ALBERS()([-122.335, 47.608]);
+    svg.append("circle").attr("class", "city").attr("cx", sx).attr("cy", sy).attr("r", 0.9 * u);
+    svg.append("text").attr("class", "city-label").attr("x", sx + 1.6 * u).attr("y", sy + 1.2 * u)
+      .attr("font-size", 3.6 * u).text("Seattle");
+    legend(document.getElementById("wa-legend"), thresholds, "cases · outlined = Puget Sound");
+  }
+
+  // United States
+  {
+    const wrap = document.getElementById("us-map");
+    if (!us) { wrap.innerHTML = ""; document.getElementById("us-legend").innerHTML = ""; return; }
+    const byName = new Map(us.states.map(s => [s.state, s]));
+    const feats = topojson.feature(topo, topo.objects.states).features;
+    const thresholds = [10, 50, 200, 500];
+    const bucket = ramp(thresholds);
+    wrap.innerHTML = "";
+    const svg = d3.select(wrap).append("svg").attr("viewBox", "0 0 975 610")
+      .attr("role", "img").attr("aria-label", "Map of US measles cases by state");
+    const tip = tooltip(wrap);
+    const regions = svg.append("g").selectAll("path").data(feats).join("path")
+      .attr("class", f => "region" + (f.properties.name === "Washington" ? " puget" : ""))
+      .attr("d", path)
+      .attr("fill", f => `var(--m${bucket(byName.get(f.properties.name)?.ytd || 0)})`);
+    regions.filter(f => f.properties.name === "Washington").raise();
+    bindRegions(regions, tip, f => {
+      const s = byName.get(f.properties.name);
+      const n = s?.ytd || 0;
+      return `<b>${esc(f.properties.name)}</b>: ${n.toLocaleString()} case${n === 1 ? "" : "s"}` +
+        (s?.week ? ` (+${s.week} this week)` : "");
+    });
+    legend(document.getElementById("us-legend"), thresholds, `cases in ${us.year}`);
+  }
 }
 
 function renderItems() {
