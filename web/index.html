@@ -79,11 +79,11 @@
   .src span.bad { background: var(--urgent-bg); color: var(--urgent); }
   .empty { color: var(--muted); font-style: italic; }
 
-  /* Measles maps: sequential red ramp; m0 = no cases */
-  :root { --m0: #eef0f3; --m1: #fde0dc; --m2: #f9b3aa; --m3: #f0786a; --m4: #d23f31; --m5: #8f1d14;
+  /* Measles maps: m0 = no cases, m1 green (1-5), m2 yellow (6-10), m3 red (over 10) */
+  :root { --m0: #eef0f3; --m1: #4caf50; --m2: #f2c230; --m3: #d23f31;
           --map-stroke: #ffffff; --map-hi: #1d2433; }
   @media (prefers-color-scheme: dark) {
-    :root { --m0: #232833; --m1: #4a2420; --m2: #6e2c25; --m3: #a33a2e; --m4: #d9584a; --m5: #ff8b7d;
+    :root { --m0: #232833; --m1: #3f9a47; --m2: #d9ad2b; --m3: #e0574a;
             --map-stroke: #0f1218; --map-hi: #e6e9ef; }
   }
   .maps { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -122,16 +122,6 @@
   <div class="grid" id="tiles"></div>
 
   <section class="card">
-    <h2>King County measles exposure sites</h2>
-    <div id="exposures"></div>
-    <div class="advice">
-      <b>Under 12 months:</b> babies haven't had their routine MMR dose. If your baby was at a listed place and time,
-      call your pediatrician right away. Immune globulin (IG) given within 6 days of exposure can prevent or
-      soften measles. Call ahead; don't walk into a clinic or ER with a possibly exposed baby.
-    </div>
-  </section>
-
-  <section class="card">
     <h2>Measles cases this year</h2>
     <div class="maps">
       <div>
@@ -146,6 +136,16 @@
         <div class="legend" id="us-legend"></div>
         <div id="states"></div>
       </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>King County measles exposure sites</h2>
+    <div id="exposures"></div>
+    <div class="advice">
+      <b>Under 12 months:</b> babies haven't had their routine MMR dose. If your baby was at a listed place and time,
+      call your pediatrician right away. Immune globulin (IG) given within 6 days of exposure can prevent or
+      soften measles. Call ahead; don't walk into a clinic or ER with a possibly exposed baby.
     </div>
   </section>
 
@@ -275,9 +275,10 @@ let atlasPromise;
 const loadAtlas = () => (atlasPromise ??= d3.json(ATLAS_URL));
 const ALBERS = () => d3.geoAlbersUsa().scale(1300).translate([487.5, 305]);
 
+const MAP_THRESHOLDS = [6, 11];   // 1-5 green, 6-10 yellow, 11+ red
 function ramp(thresholds) {
-  // bucket 0 = no cases; buckets 1..5 = increasing thresholds
-  const scale = d3.scaleThreshold().domain(thresholds).range([1, 2, 3, 4, 5]);
+  // bucket 0 = no cases; 1 = green, 2 = yellow, 3 = red
+  const scale = d3.scaleThreshold().domain(thresholds).range([1, 2, 3]);
   return v => (v > 0 ? scale(v) : 0);
 }
 function legend(el, thresholds, unit) {
@@ -326,7 +327,7 @@ async function drawMaps(counties, us) {
     const fc = {type: "FeatureCollection", features: feats};
     const [[x0, y0], [x1, y1]] = path.bounds(fc);
     const pad = 4;
-    const thresholds = [3, 7, 15, 30];
+    const thresholds = MAP_THRESHOLDS;
     const bucket = ramp(thresholds);
     wrap.innerHTML = "";
     const svg = d3.select(wrap).append("svg")
@@ -358,7 +359,7 @@ async function drawMaps(counties, us) {
     if (!us) { wrap.innerHTML = ""; document.getElementById("us-legend").innerHTML = ""; return; }
     const byName = new Map(us.states.map(s => [s.state, s]));
     const feats = topojson.feature(topo, topo.objects.states).features;
-    const thresholds = [10, 50, 200, 500];
+    const thresholds = MAP_THRESHOLDS;
     const bucket = ramp(thresholds);
     wrap.innerHTML = "";
     const svg = d3.select(wrap).append("svg").attr("viewBox", "0 0 975 610")
