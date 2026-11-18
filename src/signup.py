@@ -10,6 +10,7 @@ used to flood someone with confirmation emails:
 """
 import base64
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -48,7 +49,16 @@ def bump(key, limit, ttl_seconds):
         return False
 
 
+def from_cloudfront(event):
+    """Only CloudFront knows the secret header, so direct calls to the function URL fail."""
+    secret = os.environ.get("ORIGIN_SECRET", "")
+    got = {k.lower(): v for k, v in (event.get("headers") or {}).items()}.get("x-origin-verify", "")
+    return not secret or hmac.compare_digest(got.encode(), secret.encode())
+
+
 def handler(event, context):
+    if not from_cloudfront(event):
+        return resp(403, {"error": "Forbidden"})
     http = event.get("requestContext", {}).get("http", {})
     if http.get("method") != "POST" or event.get("rawPath") != "/api/subscribe":
         return resp(404, {"error": "Not found"})

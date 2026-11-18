@@ -34,4 +34,6 @@ new OutbreakMonitorStack(app, 'OutbreakMonitor', {
   certificateArn: process.env.CERT_ARN || undefined,
   scheduleExpression: process.env.SCHEDULE || 'cron(0 6-22/2 * * ? *)',
   maxAgeDays: Number(process.env.MAX_AGE_DAYS || 7),
+  originSecret: process.env.ORIGIN_SECRET || undefined,
+  budgetUsd: Number(process.env.BUDGET_USD || 0),
 });

@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Construct } from 'constructs';
 import * as cdk from 'aws-cdk-lib';
+import * as budgets from 'aws-cdk-lib/aws-budgets';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as cwActions from 'aws-cdk-lib/aws-cloudwatch-actions';
@@ -25,6 +26,10 @@ export interface OutbreakMonitorStackProps extends cdk.StackProps {
   scheduleExpression: string;
   /** Ignore items published more than this many days ago. */
   maxAgeDays: number;
+  /** Secret header value CloudFront sends to the sign-up API; direct calls without it are refused. */
+  originSecret?: string;
+  /** Account-wide monthly cost alert (USD), emailed to the first notification address. */
+  budgetUsd?: number;
 }
 
 /**
@@ -68,7 +73,9 @@ export class OutbreakMonitorStack extends cdk.Stack {
       }),
       memorySize: 128,
       timeout: cdk.Duration.seconds(10),
-      environment: { SEEN_TABLE: table.tableName, TOPIC_ARN: topic.ref },
+      // Caps cost and load if someone floods the endpoint; extra requests get 429.
+      reservedConcurrentExecutions: 5,
+      environment: { SEEN_TABLE: table.tableName, TOPIC_ARN: topic.ref, ORIGIN_SECRET: props.originSecret ?? '' },
       logGroup: new logs.LogGroup(this, 'SignupLogs', {
         retention: logs.RetentionDays.ONE_MONTH,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -124,6 +131,9 @@ export class OutbreakMonitorStack extends cdk.Stack {
             id: 'signup',
             domainName: signupHost,
             customOriginConfig: { originProtocolPolicy: 'https-only', originSslProtocols: ['TLSv1.2'] },
+            originCustomHeaders: props.originSecret
+              ? [{ headerName: 'X-Origin-Verify', headerValue: props.originSecret }]
+              : undefined,
           },
         ],
         cacheBehaviors: [
@@ -263,6 +273,26 @@ export class OutbreakMonitorStack extends cdk.Stack {
     pin(alarm, 'ErrorAlarm');
 
     // ---------------- Outputs ----------------
+    // ---------------- Cost alert ----------------
+    // Account-wide: emails if this month's AWS bill passes half the limit, the limit,
+    // or is forecast to pass it -- an early warning if traffic or abuse runs up costs.
+    if (props.budgetUsd && props.budgetUsd > 0) {
+      const subscribers = [{ subscriptionType: 'EMAIL', address: props.notificationEmails[0] }];
+      const notify = (notificationType: string, threshold: number) => ({
+        notification: { notificationType, comparisonOperator: 'GREATER_THAN', threshold, thresholdType: 'PERCENTAGE' },
+        subscribers,
+      });
+      new budgets.CfnBudget(this, 'MonthlyCostBudget', {
+        budget: {
+          budgetName: `${this.stackName}-monthly-cost`,
+          budgetType: 'COST',
+          timeUnit: 'MONTHLY',
+          budgetLimit: { amount: props.budgetUsd, unit: 'USD' },
+        },
+        notificationsWithSubscribers: [notify('ACTUAL', 50), notify('ACTUAL', 100), notify('FORECASTED', 100)],
+      });
+    }
+
     new cdk.CfnOutput(this, 'FunctionName', { value: fn.functionName });
     new cdk.CfnOutput(this, 'TopicArn', { value: topic.ref });
     new cdk.CfnOutput(this, 'DashboardBucketName', { value: bucket.bucketName, exportName: undefined });

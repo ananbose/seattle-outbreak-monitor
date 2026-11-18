@@ -83,6 +83,7 @@
   .signup .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
   .signup .msg { font-size: 13.5px; margin-top: 8px; }
   .signup .msg.ok { color: var(--ok); } .signup .msg.err { color: var(--urgent); }
+  .disclaimer { font-size: 12.5px; color: var(--muted); line-height: 1.55; margin-top: 8px; max-width: 75ch; }
   .src { display: flex; flex-wrap: wrap; gap: 6px; }
   .src span { font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--ok-bg); color: var(--ok); }
   .src span.bad { background: var(--urgent-bg); color: var(--urgent); }
@@ -181,6 +182,12 @@
     <h2>Sources (last run)</h2>
     <div class="src" id="sources"></div>
   </section>
+  <footer class="disclaimer">
+    Not affiliated with Public Health – Seattle &amp; King County, the Washington State Department of Health or the CDC.
+    Data is collected automatically from their public pages and local news, and may be delayed or incomplete;
+    always check the official sources linked above. This page is not medical advice. If you're worried about
+    your child's health, call your pediatrician.
+  </footer>
 </main>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
