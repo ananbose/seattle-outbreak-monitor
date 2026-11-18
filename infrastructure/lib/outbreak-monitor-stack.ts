@@ -28,6 +28,8 @@ export interface OutbreakMonitorStackProps extends cdk.StackProps {
   maxAgeDays: number;
   /** Secret header value CloudFront sends to the sign-up API; direct calls without it are refused. */
   originSecret?: string;
+  /** WAF web ACL (e.g. the one the CloudFront flat-rate plan creates); omitted = none. */
+  webAclArn?: string;
   /** Account-wide monthly cost alert (USD), emailed to the first notification address. */
   budgetUsd?: number;
 }
@@ -111,7 +113,10 @@ export class OutbreakMonitorStack extends cdk.Stack {
         comment: 'Seattle Outbreak Watch dashboard',
         defaultRootObject: 'index.html',
         httpVersion: 'http2and3',
-        priceClass: 'PriceClass_100',
+        // PriceClass_All + IPv6 match what the CloudFront flat-rate plan sets.
+        priceClass: 'PriceClass_All',
+        ipv6Enabled: true,
+        webAclId: props.webAclArn,
         aliases: useDomain ? [props.domainName!] : undefined,
         viewerCertificate: useDomain
           ? {
