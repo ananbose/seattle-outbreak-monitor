@@ -74,6 +74,15 @@
   .filters button[aria-pressed="true"] { background: var(--ink); color: var(--card); border-color: var(--ink); }
   .advice { font-size: 13.5px; background: var(--warn-bg); border-left: 3px solid var(--warn); padding: 10px 12px;
             border-radius: 6px; margin-top: 12px; }
+  .signup form { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .signup input[type=email] { flex: 1 1 240px; min-width: 0; font: inherit; font-size: 16px; padding: 9px 12px;
+                              border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }
+  .signup button { font: inherit; font-weight: 600; padding: 9px 18px; border-radius: 8px; cursor: pointer;
+                   border: 1px solid var(--accent); background: var(--accent); color: var(--card); }
+  .signup button:disabled { opacity: .6; cursor: default; }
+  .signup .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+  .signup .msg { font-size: 13.5px; margin-top: 8px; }
+  .signup .msg.ok { color: var(--ok); } .signup .msg.err { color: var(--urgent); }
   .src { display: flex; flex-wrap: wrap; gap: 6px; }
   .src span { font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--ok-bg); color: var(--ok); }
   .src span.bad { background: var(--urgent-bg); color: var(--urgent); }
@@ -137,6 +146,19 @@
         <div id="states"></div>
       </div>
     </div>
+  </section>
+
+  <section class="card signup" aria-labelledby="signup-h">
+    <h2 id="signup-h">Get email alerts</h2>
+    <div class="sub">Get an email when there's a new measles exposure site, outbreak or baby-product recall in the Seattle area.
+      Checked every 2 hours. Every email has an unsubscribe link.</div>
+    <form id="signup-form" novalidate>
+      <label for="signup-email" class="hp">Email</label>
+      <input type="email" id="signup-email" name="email" placeholder="you@example.com" autocomplete="email" required>
+      <div class="hp" aria-hidden="true"><label for="signup-website">Website</label><input type="text" id="signup-website" tabindex="-1" autocomplete="off"></div>
+      <button type="submit" id="signup-btn">Sign up</button>
+    </form>
+    <div class="msg" id="signup-msg" role="status"></div>
   </section>
 
   <section class="card">
@@ -403,6 +425,30 @@ function renderItems() {
 
 load().catch(e => { document.getElementById("updated").textContent = "Couldn't load data: " + e.message; });
 setInterval(load, 10 * 60 * 1000);
+
+// ---------------- Email alert sign-up ----------------
+document.getElementById("signup-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const email = document.getElementById("signup-email").value.trim();
+  const msg = document.getElementById("signup-msg"), btn = document.getElementById("signup-btn");
+  const show = (text, cls) => { msg.textContent = text; msg.className = "msg " + cls; };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return show("Enter a valid email address.", "err");
+  btn.disabled = true; show("Signing you up…", "");
+  try {
+    const res = await fetch("/api/subscribe", {
+      method: "POST", headers: {"content-type": "application/json"},
+      body: JSON.stringify({email, website: document.getElementById("signup-website").value}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Sign-up failed. Please try again later.");
+    document.getElementById("signup-email").value = "";
+    show(data.already
+      ? "We already sent a confirmation to that address today. Check your inbox and spam folder."
+      : "Almost done: check your inbox for an email from AWS Notifications and click \"Confirm subscription\". Alerts start after you confirm.", "ok");
+  } catch (err) {
+    show(err instanceof TypeError ? "Couldn't reach the server. Check your connection and try again." : err.message, "err");
+  } finally { btn.disabled = false; }
+});
 </script>
 </body>
 </html>

@@ -58,6 +58,27 @@ export class OutbreakMonitorStack extends cdk.Stack {
     });
     pin(table, 'SeenTable');
 
+    // ---------------- Email sign-up API (POST /api/subscribe via CloudFront) ----------------
+    const signupFn = new lambda.Function(this, 'SignupFunction', {
+      runtime: lambda.Runtime.PYTHON_3_13,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'signup.handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '..', '..', 'src'), {
+        exclude: ['__pycache__', '*.pyc'],
+      }),
+      memorySize: 128,
+      timeout: cdk.Duration.seconds(10),
+      environment: { SEEN_TABLE: table.tableName, TOPIC_ARN: topic.ref },
+      logGroup: new logs.LogGroup(this, 'SignupLogs', {
+        retention: logs.RetentionDays.ONE_MONTH,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
+    });
+    table.grantReadWriteData(signupFn);
+    signupFn.addToRolePolicy(new iam.PolicyStatement({ actions: ['sns:Subscribe'], resources: [topic.ref] }));
+    const signupUrl = signupFn.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.NONE });
+    const signupHost = cdk.Fn.select(2, cdk.Fn.split('/', signupUrl.url));
+
     // ---------------- Dashboard: private S3 bucket behind CloudFront ----------------
     const bucket = new s3.Bucket(this, 'DashboardBucket', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -98,6 +119,22 @@ export class OutbreakMonitorStack extends cdk.Stack {
             domainName: bucket.bucketRegionalDomainName,
             originAccessControlId: oac.attrId,
             s3OriginConfig: { originAccessIdentity: '' },
+          },
+          {
+            id: 'signup',
+            domainName: signupHost,
+            customOriginConfig: { originProtocolPolicy: 'https-only', originSslProtocols: ['TLSv1.2'] },
+          },
+        ],
+        cacheBehaviors: [
+          {
+            pathPattern: '/api/*',
+            targetOriginId: 'signup',
+            viewerProtocolPolicy: 'https-only',
+            allowedMethods: ['GET', 'HEAD', 'OPTIONS', 'PUT', 'PATCH', 'POST', 'DELETE'],
+            cachedMethods: ['GET', 'HEAD'],
+            cachePolicyId: cloudfront.CachePolicy.CACHING_DISABLED.cachePolicyId,
+            originRequestPolicyId: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER.originRequestPolicyId,
           },
         ],
         defaultCacheBehavior: {
